@@ -11,5 +11,6 @@
   
   <modules>
     <module>das-admin</module>
+    <module>das-worker</module>
   </modules>
 </project>
