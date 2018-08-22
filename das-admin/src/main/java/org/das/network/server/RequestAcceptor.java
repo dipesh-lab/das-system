@@ -1,6 +1,7 @@
 package org.das.network.server;
 
 import java.io.IOException;
+import java.net.StandardSocketOptions;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
@@ -25,6 +26,7 @@ public class RequestAcceptor extends AbstractRequestProcessor implements Request
 			channel = serverSocketChannel.accept();
 			if(Objects.nonNull(channel)) {
 				channel.configureBlocking(false);
+				channel = channel.setOption(StandardSocketOptions.SO_REUSEADDR, Boolean.TRUE);
 			}
 		}catch(IOException ioe) {
 			LOG.error(ioe.getMessage(), ioe);

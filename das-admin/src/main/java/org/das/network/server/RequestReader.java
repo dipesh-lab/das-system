@@ -6,19 +6,20 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.log4j.Logger;
 import org.das.constant.AppConstant;
 import org.das.exception.InvalidRequestException;
-import org.das.message.executor.MessageDataExecutor;
 
 public class RequestReader extends AbstractRequestProcessor implements RequestProcessor {
 
 	private static final Logger LOG = Logger.getLogger(RequestReader.class);
 	
-	private static final int bufferLimit = 256;
+	private static final AtomicInteger ADMIN_REQ = new AtomicInteger(0);
+	private static final AtomicInteger DAS_REQ = new AtomicInteger(0);
 	
-	private MessageDataExecutor dataExecutor = new MessageDataExecutor();
+	private static final int bufferLimit = 256;
 	
 	RequestReader(Selector sel) {
 		super(sel, SelectionKey.OP_WRITE);
@@ -30,21 +31,24 @@ public class RequestReader extends AbstractRequestProcessor implements RequestPr
 		try {
 			channel = (SocketChannel) key.channel();
 			byte[] data = readHttpMessage(channel);
-			if(data.length == 1) throw new InvalidRequestException();			
-			final String message = new String(data, AppConstant.SOCKET_CHAR_SET);
-			dataExecutor.analyseData(message, key);
-			/*if(message.startsWith("<")) {
-				key.attach(new String("!!ADMIN. Processing Complete!!-" + COUNTER.get()));
-				LOG.debug("Admin message processed " + COUNTER.getAndIncrement());
+			if(data.length == 1) throw new InvalidRequestException();
+			
+			final String message = new String(data, AppConstant.SOCKET_CHAR_SET);			
+			String resultData = null;
+			if(message.startsWith("<")) {
+				resultData = "!!ADMIN. Processing Complete!!-" + ADMIN_REQ.incrementAndGet();
+				LOG.debug("Admin Request = " + ADMIN_REQ.get());
 			} else if(message.startsWith("[") || message.startsWith("{")) {
-				dataExecutor.analyseData(message);
-			}*/
+				resultData = "!!DAS Request. Processing Complete!!-" + DAS_REQ.incrementAndGet();
+				LOG.debug("DAS Request = " + DAS_REQ.get());
+			}
+			key.attach(resultData);			
 		} catch(IOException | InvalidRequestException e) {
 			closeRequest(key,  channel);
 			if(e.getClass().equals(IOException.class))
 				LOG.error(e.getMessage(), e);
 		}
-		return null;
+		return channel;
 	}
 	
 	private byte[] readHttpMessage(SocketChannel channel) throws IOException {

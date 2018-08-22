@@ -3,8 +3,11 @@ package org.das.network.connector;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.After;
 import org.junit.Before;
@@ -12,7 +15,7 @@ import org.junit.Test;
 
 public class SocketTransportConnectorImplTest {
 
-	//private TransportListener socketListener = new SocketTransportConnectorImpl();
+	private final AtomicInteger COUNTER = new AtomicInteger(0);
 	
 	@Before
 	public void setUp() {
@@ -27,37 +30,58 @@ public class SocketTransportConnectorImplTest {
 	
 	@Test
 	public void testSimpleMessage() {
-		String message = "{\"message\":\"100\"}";
-		int i=0;
-		long start = System.currentTimeMillis();
-		while(i++ < 10)
-			connect(message + i);
+		/*Thread thread1 = new Thread(()-> {
+			long start1 = System.currentTimeMillis();
+			String message = "{\"command\":\"analysis\"}1-";
+			int i=0;			
+			while(i++ < 10000)
+				connect(message + i);
+			long end1 = System.currentTimeMillis();
+			System.out.println("Thread1. Total millis " + (end1-start1));
+		});
+		thread1.start();*/
 		
-		long end = System.currentTimeMillis();
-		System.out.println("Total millis " + (end-start));
+		Thread[] threads = new Thread[100];
+		for(int i=0;i<threads.length;i++) {
+			threads[i] = new Thread(getTask());
+		}
+		for(int i=0;i<threads.length;i++) {
+			threads[i].start();
+		}
 	}
 	
-	private boolean connect(final String data) {
-		boolean dataSent= false;
+	private Runnable getTask() {
+		return ()-> {
+			long start1 = System.currentTimeMillis();
+			String message = "{\"command\":\"analysis\"}1-";
+			int i=0;			
+			while(i++ < 150)
+				connect(message + i);
+			long end1 = System.currentTimeMillis();
+			System.out.println("Thread1. Total millis " + (end1-start1));
+		};
+	}
+	
+	private void connect(final String data) {
 		SocketAddress address = new InetSocketAddress("127.0.0.1", 1445);
-		ByteBuffer readBuff = ByteBuffer.allocate(64);
+		ByteBuffer readBuff = ByteBuffer.allocate(48);
 		SocketChannel channel=null;
 		try {
-			System.out.println("Sent message " + data);
 			channel = SocketChannel.open(address);
-			channel.configureBlocking(true);
 			channel.write(ByteBuffer.wrap(data.getBytes()));
-			channel.read(readBuff);
-			System.out.println("Received message " + new String(readBuff.array()));
-			dataSent = true;
-		} catch (IOException e) {
+			channel.read(readBuff);			
+			COUNTER.incrementAndGet();
+		} catch (Exception e) {
 			e.printStackTrace();
 		} finally {
 			try {
+				channel.socket().close();
 				channel.close();
-			}catch(IOException e){}
+			}catch(IOException e){
+				e.printStackTrace();
+			}
 		}
-		return dataSent;
+		System.out.println("Received message " + new String(readBuff.array()));
 	}
 	
 	public static void main(String[] arg) {

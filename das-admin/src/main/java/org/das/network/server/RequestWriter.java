@@ -1,13 +1,10 @@
 package org.das.network.server;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 
@@ -15,10 +12,8 @@ public class RequestWriter extends AbstractRequestProcessor implements RequestPr
 
 	private static final Logger LOG = Logger.getLogger(RequestWriter.class);
 	
-	private final Map<SelectionKey, Long> socketKeySet = new ConcurrentHashMap<SelectionKey, Long>(10);
-		
 	RequestWriter(Selector sel) {
-		super(sel, 0);
+		super(sel, -1);
 	}
 	
 	@Override
@@ -26,21 +21,16 @@ public class RequestWriter extends AbstractRequestProcessor implements RequestPr
 		SocketChannel channel = null;
 		try {
 			channel = (SocketChannel) key.channel();
-			Object object = key.attachment();			
+			Object object = key.attachment();
 			if(Objects.nonNull(object)) {
-				LOG.debug("Data Writing Request. Object Found");
 				final String data = object.toString();
-				LOG.debug("Now Writing the data " + data);
 				ByteBuffer buffer = ByteBuffer.wrap(data.getBytes());
 				channel.write(buffer);
-			} else if(!socketKeySet.containsKey(key)) {
-				socketKeySet.put(key, System.currentTimeMillis());
 			}
-			LOG.debug("Total SelectionKey " + socketKeySet.size());
-		} catch(IOException ioe) {
-			LOG.error(ioe.getMessage(), ioe);
+		} catch(Exception e) {
+			LOG.error(e.getMessage(), e);
 		} finally {
-			//closeRequest(key, channel);
+			closeRequest(key, channel);
 		}
 		return null;
 	}

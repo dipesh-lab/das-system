@@ -2,12 +2,11 @@ package org.das.network.server;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.StandardSocketOptions;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.util.Iterator;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 import org.das.network.listener.NetworkMessageListener;
@@ -22,8 +21,6 @@ public class SocketTransportConnector extends Thread implements TransportListene
 	private ServerSocketChannel serverSocket = null;
 	
 	private Selector selector = null;
-	
-	private Map<Integer, RequestProcessor> processors = new ConcurrentHashMap<>(3, 1.0f);
 	
 	public SocketTransportConnector() {}
 	
@@ -43,15 +40,15 @@ public class SocketTransportConnector extends Thread implements TransportListene
 	                    SelectionKey key = i.next();
 	                    i.remove();
 	                    if(key.isAcceptable()) {
-	                    	RequestProcessor processor = processors.get(SelectionKey.OP_ACCEPT);
+	                    	RequestProcessor processor = new RequestAcceptor(selector);
 	                    	processor.handleRequest(key);
 	                    }
 	                    if(key.isReadable()) {
-	                    	RequestProcessor processor = processors.get(SelectionKey.OP_READ);
+	                    	RequestProcessor processor = new RequestReader(selector);
 	                    	processor.handleRequest(key);
 	                    }
 	                    if(key.isWritable()) {
-	                    	RequestProcessor processor = processors.get(SelectionKey.OP_WRITE);
+	                    	RequestProcessor processor = new RequestWriter(selector);
 	                    	processor.handleRequest(key);
 	                    }
 	                }
@@ -70,11 +67,8 @@ public class SocketTransportConnector extends Thread implements TransportListene
 			serverSocket.configureBlocking(false);
 			InetSocketAddress inetSocketAddress = new InetSocketAddress(serverPort);
 			serverSocket.socket().bind(inetSocketAddress);
-			serverSocket.register(selector, SelectionKey.OP_ACCEPT);
-			
-			processors.put(SelectionKey.OP_ACCEPT, new RequestAcceptor(selector));
-			processors.put(SelectionKey.OP_READ, new RequestReader(selector));
-			processors.put(SelectionKey.OP_WRITE, new RequestWriter(selector));
+			serverSocket.register(selector, SelectionKey.OP_ACCEPT);			
+			serverSocket.setOption(StandardSocketOptions.SO_REUSEADDR, Boolean.TRUE);
 			listen = true;
 			LOG.debug("Admin Server initialised sucessfully on port " + serverPort);
 		} catch(IOException e) {
