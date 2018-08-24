@@ -12,27 +12,25 @@ public class RequestWriter extends AbstractRequestProcessor implements RequestPr
 
 	private static final Logger LOG = Logger.getLogger(RequestWriter.class);
 	
-	RequestWriter(Selector sel) {
-		super(sel, -1);
+	public RequestWriter(Selector sel) {
+		super(sel, SelectionKey.OP_READ);
 	}
 	
 	@Override
 	public SocketChannel process(SelectionKey key) {
-		SocketChannel channel = null;
-		try {
-			channel = (SocketChannel) key.channel();
-			Object object = key.attachment();
-			if(Objects.nonNull(object)) {
+		Object object = key.attachment();
+		SocketChannel channel = (SocketChannel) key.channel();
+		if(Objects.nonNull(object)) {
+			try {
 				final String data = object.toString();
 				ByteBuffer buffer = ByteBuffer.wrap(data.getBytes());
 				channel.write(buffer);
+				LOG.debug("Writing Complete. " + data);			
+			} catch(Exception e) {
+				LOG.error(e.getMessage(), e);
 			}
-		} catch(Exception e) {
-			LOG.error(e.getMessage(), e);
-		} finally {
-			closeRequest(key, channel);
 		}
-		return null;
+		return channel;
 	}
 
 }
