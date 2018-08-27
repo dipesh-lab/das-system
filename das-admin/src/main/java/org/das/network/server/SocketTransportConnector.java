@@ -6,11 +6,12 @@ import java.net.StandardSocketOptions;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
-import java.util.HashMap;
+import java.nio.channels.SocketChannel;
 import java.util.Iterator;
-import java.util.Map;
+import java.util.Objects;
 
 import org.apache.log4j.Logger;
+import org.das.message.executor.IncomingRequestExecutor;
 import org.das.network.listener.NetworkMessageListener;
 import org.das.network.listener.TransportListener;
 
@@ -24,7 +25,7 @@ public class SocketTransportConnector extends Thread implements TransportListene
 	
 	private Selector selector = null;
 	
-	//private Map<Integer, RequestProcessor> processors = new HashMap<Integer, RequestProcessor>(3, 1.0f);
+	private IncomingRequestExecutor requestExecutor = null;
 	
 	public SocketTransportConnector() {}
 	
@@ -42,19 +43,22 @@ public class SocketTransportConnector extends Thread implements TransportListene
 	            if(count > 0) {
 	                for(Iterator<SelectionKey> i = selector.selectedKeys().iterator(); i.hasNext();) {
 	                    SelectionKey key = i.next();
+	                    if(key.isValid()) {
+	                    	if(key.isAcceptable()) {
+		                    	try {
+		                			ServerSocketChannel serverSocketChannel = 
+		                					(ServerSocketChannel) key.channel();
+		                			SocketChannel channel = serverSocketChannel.accept();
+		                			if(Objects.nonNull(channel)) {
+		                				channel.configureBlocking(false);
+		                				requestExecutor.process(key, channel);
+		                			}
+		                		}catch(IOException ioe) {
+		                			LOG.error(ioe.getMessage(), ioe);
+		                		}
+		                    }
+	                    }
 	                    i.remove();
-	                    if(key.isAcceptable()) {
-	                    	//RequestProcessor processor = processors.get(SelectionKey.OP_ACCEPT);
-	                    	new RequestAcceptor(selector).handleRequest(key);
-	                    }
-	                    if(key.isReadable()) {
-	                    	//RequestProcessor processor = processors.get(SelectionKey.OP_READ);
-	                    	new RequestReader(selector).handleRequest(key);
-	                    }
-	                    if(key.isValid() && key.isWritable()) {
-	                    	//RequestProcessor processor = processors.get(SelectionKey.OP_WRITE);
-	                    	new RequestWriter(selector).handleRequest(key);
-	                    }
 	                }
 	            }
 			}catch(Exception e) {
@@ -70,18 +74,16 @@ public class SocketTransportConnector extends Thread implements TransportListene
 			serverSocket = ServerSocketChannel.open();
 			serverSocket.configureBlocking(false);
 			InetSocketAddress inetSocketAddress = new InetSocketAddress(serverPort);
-			serverSocket.socket().bind(inetSocketAddress);
-			serverSocket.register(selector, SelectionKey.OP_ACCEPT);			
-			//serverSocket.setOption(StandardSocketOptions.SO_REUSEADDR, Boolean.TRUE);
+			serverSocket.bind(inetSocketAddress, 50000);
+			serverSocket.register(selector, SelectionKey.OP_ACCEPT);
+			serverSocket.setOption(StandardSocketOptions.SO_REUSEADDR, Boolean.TRUE);
 			
-			/*processors.put(SelectionKey.OP_ACCEPT, new RequestAcceptor(selector));
-			processors.put(SelectionKey.OP_READ, new RequestReader(selector));
-			processors.put(SelectionKey.OP_WRITE, new RequestWriter(selector));*/
-			
+			requestExecutor = new IncomingRequestExecutor();
 			listen = true;
 			LOG.debug("Admin Server initialised sucessfully on port " + serverPort);
 		} catch(IOException e) {
 			LOG.error(e.getMessage(), e);
+			stopListener();
 		}
 	}
 
@@ -91,8 +93,10 @@ public class SocketTransportConnector extends Thread implements TransportListene
 	@Override
 	public void stopListener() {
 		listen = false;
+		requestExecutor.shutdown();
 		try {
-			serverSocket.close();
+			if(selector.isOpen()) selector.close();
+			if(Objects.nonNull(serverSocket) && serverSocket.isOpen()) serverSocket.close();
 		} catch (IOException e) {
 			LOG.error(e.getMessage(), e);
 		}

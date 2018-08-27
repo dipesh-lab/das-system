@@ -11,96 +11,81 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.das.constant.AppConstant;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.Test;
-
 public class SocketTransportConnectorImplTest {
 
 	private volatile AtomicInteger COUNTER = new AtomicInteger(1);
 	
-	private final SocketAddress address = new InetSocketAddress("127.0.0.1", 1445);
+	private final SocketAddress address = new InetSocketAddress("10.142.0.30", 61000);
 	
-	@Before
-	public void setUp() {
-		//socketListener.init("localhost", 1445);
-		//socketListener.startConnector();
-	}
-	
-	@After
-	public void afterTest() {
-		//socketListener.stopListener();
-	}
-	
-	@Test
 	public void testSimpleMessage() {
-		long start1 = System.currentTimeMillis();
-		/*Thread thread1 = new Thread(()-> {
-			long start1 = System.currentTimeMillis();
-			String message = "{\"command\":\"analysis\"}1-";
-			int i=0;			
-			while(i++ < 10000)
-				connect(message + i);
-			long end1 = System.currentTimeMillis();
-			System.out.println("Thread1. Total millis " + (end1-start1));
-		});
-		thread1.start();*/
-		Thread[] threads = new Thread[200];
+		Thread[] threads = new Thread[2000];
 		for(int i=0;i<threads.length;i++) {
-			threads[i] = new Thread(getTask());
+			threads[i] = new Thread(getTask2());
 		}
 		for(int i=0;i<threads.length;i++) {
+			try {
+				Thread.currentThread().sleep(10);
+			}catch(InterruptedException e){}
 			threads[i].start();
 		}
-		long end1 = System.currentTimeMillis();
-		System.out.println("Thread1. Total millis " + (end1-start1));
 	}
 	
-	private Runnable getTask() {
+	private Runnable getTask2() {
 		return ()-> {
 			String message = "{\"command\":\"analysis\"}-";
-			int index = 1;
+			int index = COUNTER.getAndIncrement();
 			boolean listen = true;
 			try {
 				Selector selector = Selector.open();
-				SocketChannel channel = connect(selector);
+				SocketChannel channel = connect();
 				channel.register(selector, SelectionKey.OP_WRITE);
 				while(listen) {
 					try {
 						int count = selector.select();
 			            if(count > 0) {
-			                for(Iterator<SelectionKey> i = selector.selectedKeys().iterator(); i.hasNext();) {
+			                for(Iterator<SelectionKey> i = selector.selectedKeys().iterator(); 
+			                									listen && i.hasNext();) {
 			                    SelectionKey key = i.next();
 			                    i.remove();
-			                    if(key.isReadable()) {
-			                    	byte[] data = readMessage(channel);
-			                    	if(data.length != 1) {
-			                    		System.out.println("Received Message. " + new String(data, AppConstant.SOCKET_CHAR_SET));
-			                    		if(index++ == 1000) listen = false;
-			                    		else channel.register(selector, SelectionKey.OP_WRITE);
-			                    	}
-			                    }
-			                    if(key.isWritable()) {
-			                    	writeToChannel(message + COUNTER.getAndIncrement(), channel);
-			                    	channel.register(selector, SelectionKey.OP_READ);
-			                    	Thread.currentThread().sleep(200);
+			                    if(key.isValid()) {
+				                    if(key.isReadable()) {
+				                    	byte[] data = readMessage(channel);
+				                    	if(data.length != 1) {
+				                    		System.out.println("READ for NO : " + index);
+				                    		System.out.println("Received Message. " + new String(data, "ISO-8859-1"));
+				                    		listen = false;
+				                    		key.cancel();
+				                    		break;
+				                    		/*if(index++ == limit) {
+				                    			listen = false;
+				                    			break;
+				                    		} else {
+				                    			channel.register(selector, SelectionKey.OP_WRITE);
+				                    		}*/
+				                    	}
+				                    }
+				                    if(key.isWritable()) {
+				                    	/*if(index == limit) {
+				                    		listen = false;
+				                    		writeToChannel("quit", channel);
+				                    		break;
+				                    	} else {*/
+				                    	System.out.println("WRITE for NO : " + index);
+				                    	writeToChannel(message + index, channel);
+				                    	Thread.sleep(50);
+				                    	channel.register(selector, SelectionKey.OP_READ);
+				                    	//}
+				                    }
 			                    }
 			                }
 			            }
 					}catch(Exception e) {
+						listen = false;
 						e.printStackTrace();
 					}
-					/* Working example
-					writeToChannel(message + COUNTER.getAndIncrement(), channel);
-					Thread.currentThread().sleep(20);
-					channel.register(selector, SelectionKey.OP_READ);
-					byte[] data = readMessage(channel);
-					System.out.println("Received Message. " + new String(data, AppConstant.SOCKET_CHAR_SET));
-					*/
 				}
-				channel.shutdownInput();
-				channel.shutdownOutput();
+				System.out.println("Stopped push new message and close channel. NO : " + index);
+				selector.close();
 				channel.close();
 			}catch(Exception e) {
 				e.printStackTrace();
@@ -108,9 +93,11 @@ public class SocketTransportConnectorImplTest {
 		};
 	}
 	
-	private SocketChannel connect(Selector selector) throws IOException {
-		SocketChannel channel = SocketChannel.open(address);
+	private SocketChannel connect() throws IOException {
+		SocketChannel channel = SocketChannel.open(address);		
 		channel.configureBlocking(false);
+		//channel.connect(address);
+		//channel.finishConnect();
 		return channel;
 	}
 	
