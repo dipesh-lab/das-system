@@ -4,11 +4,8 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class IncomingRequestExecutor {
-	
-	private final AtomicInteger counter = new AtomicInteger(1);
 	
 	private final ExecutorService executorService;
 	
@@ -17,7 +14,7 @@ public class IncomingRequestExecutor {
 	}
 	
 	public void process(final SelectionKey key, final SocketChannel channel) {
-		executorService.execute(new RequestProcessorThread(channel, counter));
+		executorService.execute(new RequestProcessorThread(channel));
 	}
 	
 	public void shutdown() {

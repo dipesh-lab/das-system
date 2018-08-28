@@ -7,9 +7,9 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.log4j.Logger;
+import org.das.config.AppConfiguration;
 import org.das.constant.AppConstant;
 
 public class RequestProcessorThread implements Runnable {
@@ -22,11 +22,10 @@ public class RequestProcessorThread implements Runnable {
 	
 	private SelectionKey currentKey = null;
 	
-	private volatile AtomicInteger counter;
+	private ByteBuffer reqAccptBuffer = ByteBuffer.wrap(AppConfiguration.getInstance().getProperty("request.accepted.message").getBytes());
 
-	public RequestProcessorThread(final SocketChannel channel, final AtomicInteger counter) {
+	public RequestProcessorThread(final SocketChannel channel) {
 		this.channel = channel;
-		this.counter = counter;
 	}
 
 	@Override
@@ -73,8 +72,8 @@ public class RequestProcessorThread implements Runnable {
 	}
 
 	private void doWrite() throws IOException {
-		ByteBuffer buffer = ByteBuffer.wrap(("!Done!-"+counter.getAndIncrement()).getBytes());
-		channel.write(buffer);
+		channel.write(reqAccptBuffer);
+		reqAccptBuffer.rewind();
 	}
 
 	private byte[] readMessage() throws IOException {

@@ -9,7 +9,10 @@ import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.das.constant.AppConstant;
 
 public class SocketTransportConnectorImplTest {
 
@@ -18,14 +21,11 @@ public class SocketTransportConnectorImplTest {
 	private final SocketAddress address = new InetSocketAddress("10.142.0.30", 61000);
 	
 	public void testSimpleMessage() {
-		Thread[] threads = new Thread[2000];
+		Thread[] threads = new Thread[3000];
 		for(int i=0;i<threads.length;i++) {
 			threads[i] = new Thread(getTask2());
 		}
 		for(int i=0;i<threads.length;i++) {
-			try {
-				Thread.currentThread().sleep(10);
-			}catch(InterruptedException e){}
 			threads[i].start();
 		}
 	}
@@ -33,12 +33,19 @@ public class SocketTransportConnectorImplTest {
 	private Runnable getTask2() {
 		return ()-> {
 			String message = "{\"command\":\"analysis\"}-";
-			int index = COUNTER.getAndIncrement();
 			boolean listen = true;
+			Selector selector = null;
+			SocketChannel channel = null;
 			try {
-				Selector selector = Selector.open();
-				SocketChannel channel = connect();
+				selector = Selector.open();
+				channel = connect();
+				if(Objects.isNull(channel) || !channel.isConnected()) {
+					Thread.sleep(500);
+					channel = connect();
+				}
 				channel.register(selector, SelectionKey.OP_WRITE);
+				int index = 0;
+				int limit = 10;
 				while(listen) {
 					try {
 						int count = selector.select();
@@ -51,28 +58,29 @@ public class SocketTransportConnectorImplTest {
 				                    if(key.isReadable()) {
 				                    	byte[] data = readMessage(channel);
 				                    	if(data.length != 1) {
-				                    		System.out.println("READ for NO : " + index);
-				                    		System.out.println("Received Message. " + new String(data, "ISO-8859-1"));
+				                    		System.out.println("Received Message. " + new String(data, AppConstant.SOCKET_CHAR_SET));
+				                    		/*
 				                    		listen = false;
-				                    		key.cancel();
-				                    		break;
-				                    		/*if(index++ == limit) {
+				                    		key.cancel();				                    		
+				                    		break;*/
+				                    		if(++index == limit) {
 				                    			listen = false;
+				                    			key.cancel();
 				                    			break;
 				                    		} else {
 				                    			channel.register(selector, SelectionKey.OP_WRITE);
-				                    		}*/
+				                    		}
 				                    	}
 				                    }
 				                    if(key.isWritable()) {
 				                    	/*if(index == limit) {
 				                    		listen = false;
 				                    		writeToChannel("quit", channel);
+				                    		key.cancel();
 				                    		break;
 				                    	} else {*/
-				                    	System.out.println("WRITE for NO : " + index);
-				                    	writeToChannel(message + index, channel);
-				                    	Thread.sleep(50);
+				                    	writeToChannel(message + COUNTER.getAndIncrement(), channel);
+				                    	Thread.sleep(100);
 				                    	channel.register(selector, SelectionKey.OP_READ);
 				                    	//}
 				                    }
@@ -83,12 +91,17 @@ public class SocketTransportConnectorImplTest {
 						listen = false;
 						e.printStackTrace();
 					}
-				}
-				System.out.println("Stopped push new message and close channel. NO : " + index);
-				selector.close();
-				channel.close();
+				}				
 			}catch(Exception e) {
 				e.printStackTrace();
+			} finally {
+				System.out.println("Stopped push new message and close channel.");
+				try {
+					selector.close();
+					if(channel.isOpen()) channel.close();
+				} catch(Exception e) {
+					e.printStackTrace();
+				}
 			}
 		};
 	}
