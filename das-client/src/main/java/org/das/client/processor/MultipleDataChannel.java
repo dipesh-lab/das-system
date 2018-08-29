@@ -14,101 +14,119 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.das.client.constant.ClientAppConstant;
+import org.das.client.exception.ConnectionDataLinkException;
 
 public class MultipleDataChannel implements Runnable {
 
 	private final String name;
 	private final String hostAddress;
 	private final int port;
-	private final BlockingQueue<String> messageQueue;
+	private BlockingQueue<String> messageQueue = null;
 	private boolean connected = false;
-	private SelectionKey currentKey=null;
+	private SelectionKey currentKey = null;
 	private SocketChannel channel = null;
 	private Selector selector = null;
-	
-	MultipleDataChannel(final String name, final String hostAddress, final int port) {
+
+	MultipleDataChannel(final String name, final String hostAddress,
+			final int port) throws ConnectionDataLinkException {
 		this.name = name;
 		this.hostAddress = hostAddress;
 		this.port = port;
-		messageQueue = new LinkedBlockingQueue<String>();
 	}
-	
+
 	@Override
 	public void run() {
-		try {
-			selector = Selector.open();
-			channel = connect();
-			while(connected) {
-				try {
-					int count = selector.select();
-		            if(count > 0) {
-		                for(Iterator<SelectionKey> i = selector.selectedKeys().iterator(); 
-		                									connected && i.hasNext();) {
-		                	currentKey = i.next();
-		                    if(currentKey.isValid()) {
-			                    if(currentKey.isReadable()) {
-			                    	byte[] data = readMessage(channel);
-			                    	if(data.length != 1) {
-			                    		System.out.println("Client [" + name + "]. Received : " + new String(data, ClientAppConstant.DEFAULT_CHARSET));
-			                    		channel.register(selector, SelectionKey.OP_WRITE);
-			                    	}
-			                    }
-			                    if(currentKey.isWritable()) {
-			                    	final String message = getMessage();
-			                    	System.out.println("Client [" + name + "]. Push : " + message);
-			                    	writeToChannel(message);
-			                    	Thread.sleep(50);
-			                    	channel.register(selector, SelectionKey.OP_READ);
-			                    }
-		                    }
-		                    i.remove();
-		                }
-		            }
-				}catch(Exception e) {
-					closeChannel();
+		while (connected) {
+			try {
+				int count = selector.select();
+				if (count > 0) {
+					for (Iterator<SelectionKey> i = selector.selectedKeys()
+							.iterator(); connected && i.hasNext();) {
+						currentKey = i.next();
+						if (currentKey.isValid()) {
+							if (currentKey.isReadable()) {
+								byte[] data = readMessage(channel);
+								if (data.length != 1) {
+									final String result = new String(data, ClientAppConstant.DEFAULT_CHARSET);
+									System.out.println("Client [" + name + "]. Received : " + result);
+									channel.register(selector, SelectionKey.OP_WRITE);
+								}
+							}
+							if (currentKey.isWritable()) {
+								final String message = getMessage();
+								if(Objects.isNull(message)) break;
+								System.out.println("Client [" + name + "]. Push : " + message);
+								writeToChannel(message);
+								Thread.sleep(50);
+								channel.register(selector, SelectionKey.OP_READ);
+							}
+						}
+						i.remove();
+					}
 				}
+			} catch (IOException e) {
+				closeChannel();
+				throw new ConnectionDataLinkException(e.getMessage());
+			} catch(InterruptedException e) {
+				e.printStackTrace();
 			}
-		} catch(Exception e) {
-			e.printStackTrace();
 		}
+		System.out.println("Channel Thread completed its work...");
 	}
-	
-	public void pushMessage(final String message) {
+
+	void pushMessage(final String message) {
 		try {
 			messageQueue.put(message);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
 	}
+
+	void connect() throws IOException {
+		selector = Selector.open();
+		SocketAddress address = new InetSocketAddress(hostAddress, port);
+		channel = SocketChannel.open(address);
+		channel.configureBlocking(false);
+		channel.register(selector, SelectionKey.OP_WRITE);
+		messageQueue = new LinkedBlockingQueue<String>();
+		connected = true;
+	}
+	
+	void closeChannel() {
+		connected = false;
+		if (Objects.nonNull(currentKey)) currentKey.cancel();
+		try {
+			selector.close();
+			if (Objects.nonNull(channel) && channel.isOpen()) channel.close();
+		}catch(IOException e) {
+			closeChannel();
+			e.printStackTrace();
+		}
+	}
+	
+	boolean isConnected() {
+		return connected;
+	}
 	
 	private String getMessage() {
 		String message = null;
 		try {
 			message = messageQueue.take();
-			if(Objects.isNull(message)) message = getMessage();
-			if(ClientAppConstant.CHANNEL_QUIT_MESSAGE.equalsIgnoreCase(message)) {
+			if (ClientAppConstant.CHANNEL_QUIT_MESSAGE.equalsIgnoreCase(message)) {
 				closeChannel();
 			}
-		} catch (IOException | InterruptedException e) {
-			e.printStackTrace();
+		} catch (InterruptedException e) {
+			//e.printStackTrace();
 		}
 		return message;
 	}
-	
-	private SocketChannel connect() throws IOException {
-		SocketAddress address = new InetSocketAddress(hostAddress, port);
-		SocketChannel channel = SocketChannel.open(address);
-		channel.configureBlocking(false);
-		channel.register(selector, SelectionKey.OP_WRITE);
-		return channel;
-	}
-	
+
 	private byte[] readMessage(SocketChannel channel) throws IOException {
 		ByteBuffer buffer = ByteBuffer.allocate(64);
 		int state;
-		byte[] data = {1};
+		byte[] data = { 1 };
 		int position = 0;
-		while( (state = channel.read(buffer)) > 0 ) {
+		while ((state = channel.read(buffer)) > 0) {
 			buffer.flip();
 			byte[] d = Arrays.copyOf(buffer.array(), state);
 			data = Arrays.copyOf(data, position + state);
@@ -118,17 +136,10 @@ public class MultipleDataChannel implements Runnable {
 		}
 		return data;
 	}
-	
+
 	private void writeToChannel(final String data) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(data.getBytes());
 		channel.write(buffer);
-	}
-	
-	private void closeChannel() throws IOException {
-		connected = false;
-		currentKey.cancel();
-		selector.close();
-		channel.close();
 	}
 
 }

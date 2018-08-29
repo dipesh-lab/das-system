@@ -21,7 +21,6 @@ public class SingleDataChannel {
 	private SelectionKey currentKey = null;
 	private SocketChannel channel = null;
 	private Selector selector = null;
-	private String message = null;
 	private boolean connected = false;
 
 	SingleDataChannel(final String hostAddress, final int port) {
@@ -29,16 +28,9 @@ public class SingleDataChannel {
 		this.port = port;
 	}
 
-	public String pushMessage(final String message) throws ConnectionDataLinkException {
-		this.message = message;
-		return publish();
-	}
-
-	private String publish() throws ConnectionDataLinkException {
+	String pushMessage(final String message) throws ConnectionDataLinkException {
 		String result = null;				
 		try {
-			selector = Selector.open();
-			channel = connect();
 			while(connected) {
 				int count = selector.select();
 				if (count > 0) {
@@ -55,7 +47,7 @@ public class SingleDataChannel {
 							}
 							if (currentKey.isWritable()) {
 								writeToChannel(message);
-								Thread.sleep(100);
+								Thread.sleep(50);
 								channel.register(selector, SelectionKey.OP_READ);
 							}
 						}
@@ -72,15 +64,30 @@ public class SingleDataChannel {
 		return result;
 	}
 
-	private SocketChannel connect() throws IOException {
+	void connect() throws IOException {
+		selector = Selector.open();
 		SocketAddress address = new InetSocketAddress(hostAddress, port);
-		SocketChannel channel = SocketChannel.open(address);
+		channel = SocketChannel.open(address);
 		channel.configureBlocking(false);
 		channel.register(selector, SelectionKey.OP_WRITE);
 		connected = true;
-		return channel;
 	}
 
+	void closeChannel() {
+		connected = false;
+		if(Objects.nonNull(currentKey)) currentKey.cancel();
+		try {
+			selector.close();
+			if(Objects.nonNull(channel) && channel.isOpen()) channel.close();
+		}catch(IOException e) {
+			e.printStackTrace();
+		}
+	}
+	
+	boolean isConnected() {
+		return connected;
+	}
+	
 	private byte[] readMessage(SocketChannel channel) throws IOException {
 		ByteBuffer buffer = ByteBuffer.allocate(64);
 		int state;
@@ -100,17 +107,6 @@ public class SingleDataChannel {
 	private void writeToChannel(final String data) throws IOException {
 		ByteBuffer buffer = ByteBuffer.wrap(data.getBytes());
 		channel.write(buffer);
-	}
-
-	private void closeChannel() {
-		connected = false;
-		try {
-			if(Objects.nonNull(currentKey)) currentKey.cancel();
-			selector.close();
-			if(Objects.nonNull(channel) && channel.isOpen()) channel.close();
-		}catch(IOException e) {
-			e.printStackTrace();
-		}
 	}
 
 }
