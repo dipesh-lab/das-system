@@ -13,5 +13,7 @@
     <module>das-admin</module>
     <module>das-worker</module>
     <module>das-client</module>
+    <module>das-function-example</module>
+    <module>das-functional-interface</module>
   </modules>
 </project>
